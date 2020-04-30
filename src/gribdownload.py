@@ -24,20 +24,6 @@ import argparse
 import Queue
 import threading
 
-sys.argv[1:] = [
-    '--working-dir', r'D:\metvue\projects\LRN\scripts',
-    '--output-dir' , '../data/qpe',
-    'qpe',
-    ]
-'''
-    '--help',
-    'qpf',
-    'hrrr',
-    '--output-dir', r'../data/hrrr','--force',
-    'hrrr', '-f=1,2,3,6-18',
-    'qpe', '--product', 'GaugeCorr',
-    '--force'
-'''
 
 # Set Constants
 _path = os.path.abspath(os.path.dirname(__file__))
