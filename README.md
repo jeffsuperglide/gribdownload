@@ -2,20 +2,20 @@
 
 Python script to download QPE, QPF, and HRRR GRIB files from NOAA websites.
 
-gribdownload was written in Python 2.7 to allow integration into CWMS/RTS CAVI.
+gribdownload was written in Python 2.7 to allow integration into CWMS/RTS CAVI.  Users should review their available Python installation(s) to determine the best way for them to run this script.
 
-## USACE Branch
+## Branch `master`
 
-usace/cavi
+The `master` branch is a version attempting to be generatl enough allowing the user to implement using their method of execution.
 
-The included shebang (#!) is set to a USACE installed ArcGIS version.
-The user should review their available Python installation(s) to determine the
-best way for them to run this script.  For USACE users, the shebang (#!) can point
-to jython.exe in the CWMS CAVI installation using the FQPN.
+## Branch `usace/cavi`
+
+The included shebang (#!) is set to a USACE CWMS installation; currently commented out.  The shebang (#!) can point to jython.exe in the CWMS CAVI installation using the FQPN to execute outside the CWMS CAVI environment.
 
 ## Help Output
 
-```usage: GribDownload.py [-h] [-w /path/to/working/directory] -o
+```
+usage: GribDownload.py [-h] [-w /path/to/working/directory] -o
                        /path/to/output/directory [--force]
                        [-l /path/to/log/file.log] [-n {0,1,2,3,4,5}]
                        {qpe,qpf,hrrr} ...
@@ -61,4 +61,25 @@ hrrr [-c, --cycle hour (default=current UTC hour)] [-f, --fct-hour range(s)(defa
     numbers and ranges.  Example 1,2,3,9-20 produces a list of forecast hours
     1,2,3,9,10,11,12,13,14,15,16,17,18,19,20.
 
-    *indicates the default value.```
+    *indicates the default value.
+```
+
+## Example Execution
+
+- Download QPE grib files not on user's system using defined working directory, defined output directory, and output log to file.
+
+  ```
+  GribDownload.py --working-dir /path/to/working \
+  --output-dir /path/to/output \
+  --log-file /path/to/working/file.log \
+  qpe
+  ```
+
+- Download 6-hour QPF for the latest forecast cycle based on user's system time.  System time and available forecasts don't always match resulting in no files downloaded.
+
+  ```
+  GribDownload.py --working-dir /path/to/working \
+  --output-dir /path/to/output \
+  --log-file /path/to/working/file.log \
+  qpf
+  ```
