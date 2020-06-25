@@ -1,16 +1,7 @@
-##! C:\app\CWMS\CWMS-v3.1.1\CAVI\jython.exe
 """Download NOAA Grib2 files to the user's PC
 """
 
-# metadata
-__author__="Jeff Gregory"
-__credits__ = ["Jeff Gregory"]
-#__version__ = '{mayor}.{minor}.{rel}'
-__maintainer__ = "Jeff Gregory"
-__email__ = "jeffrey.s.gregory@usace.army.mil"
-__status__ = "Dev"
-
-# Jython Imports
+# Python Imports
 import os
 import re
 import sys
@@ -22,8 +13,6 @@ import logging.handlers
 import argparse
 import Queue
 import threading
-
-sys.argv[1:] = ['--help']
 
 # Set Constants
 _path = os.path.abspath(os.path.dirname(__file__))
