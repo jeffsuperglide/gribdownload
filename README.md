@@ -6,7 +6,7 @@ gribdownload was written in Python 2.7 to allow integration into CWMS/RTS CAVI. 
 
 ## Branch `master`
 
-The `master` branch is a version attempting to be generatl enough allowing the user to implement using their method of execution.
+The `master` branch is a version attempting to be general enough allowing the user to implement using their method of execution.
 
 ## Branch `usace/cavi`
 
