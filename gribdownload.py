@@ -1,3 +1,4 @@
+##! C:\app\CWMS\CWMS-v3.1.1\CAVI\jython.exe
 """Download NOAA Grib2 files to the user's PC
 """
 
@@ -15,8 +16,6 @@ import Queue
 import threading
 
 # Set Constants
-_path = os.path.abspath(os.path.dirname(__file__))
-_name = os.path.basename(__file__).split('.')[0]
 max_thread = 4      # low thread count seems to keep out SSL errors
 
 mrms_base = 'https://mrms.ncep.noaa.gov/data/2D/{PRODUCT}_QPE_{HOUR}H/'
@@ -37,7 +36,7 @@ def local_logger(log_file=None, log_level=2):
     '''
     log_level *= 10
     # Start logging
-    logger = logging.getLogger(_name)
+    logger = logging.getLogger()
     logger.setLevel(log_level)
 
     formatter = logging.Formatter('%(asctime)s.%(msecs)03d - ' +
