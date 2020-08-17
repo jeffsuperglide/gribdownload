@@ -1,85 +1,85 @@
-# gribdownload
+# Grib File Downloader
 
-Python script to download QPE, QPF, and HRRR GRIB files from NOAA websites.
+## Description
 
-gribdownload was written in Python 2.7 to allow integration into CWMS/RTS CAVI.  Users should review their available Python installation(s) to determine the best way for them to run this script.
+This Python script can be used to download Quantitative Precipitation Estimates (QPE), Quantitative Precipitation Forecasts (QPF), or High-Resolution Rapid Refresh (HRRR) precipitation Gridded Binary (GRIB2) files.  These products are provided by NOAA on public websites.  QPE and QPF sources only provide a select number of observed (QPE) and forecasted (QPF) products.  HRRR files are downloaded from [nomads.ncep.noaa.gov](https://nomads.ncep.noaa.gov/) Grib Filter application extracting the variable PRATE (precip rate) at the surface level.
 
-## Branch `master`
+## Installation
 
-The `master` branch is a version attempting to be generatl enough allowing the user to implement using their method of execution.
+This Grib downloader, `gribdownload`, was written in Python 2.7 to allow integration into CWMS/RTS CAVI.  Download from the `master` branch for the most stable version.  Users should review their available Python installation(s) to determine the best way for them to run this script.
 
-## Branch `usace/cavi`
+## Required Options/Arguments
 
-The included shebang (#!) is set to a USACE CWMS installation; currently commented out.  The shebang (#!) can point to jython.exe in the CWMS CAVI installation using the FQPN to execute outside the CWMS CAVI environment.
+- Output directory (-o or --output-dir)
+- Product type (qpe, qpf, or hrrr).
 
-## Help Output
+## Downloading Products
 
-```
-usage: GribDownload.py [-h] [-w /path/to/working/directory] -o
-                       /path/to/output/directory [--force]
-                       [-l /path/to/log/file.log] [-n {0,1,2,3,4,5}]
-                       {qpe,qpf,hrrr} ...
+### QPE
 
-Download Quantitative Precipitation Estimates (QPE), Quantitative
-Precipitation Forecasts (QPF), or High-Resolution Rapid Refresh (HRRR)
-precipitation Gridded Binary (GRIB2) files.  These products are provided by
-NOAA on public websites.  QPE and QPF sources only provide a select number
-of observed (QPE) and forecasted (QPF) products.  HRRR files are downloaded
-from nomads.ncep.noaa.gov Grib Filter application extracting surface level
-and the variable PRATE (precip rate).
+|Argument|Options|Description|
+|---|---|---|
+|-p <br /> --product|GaugeCorr*, GaugeOnly, or RadarOnly|Defines the QPE product type.  GaugeCorr is the default|
+|-i <br /> --interval|1*, 3, 6, 12, 24, 48, or 72|Defines the QPE total precipitation interval.  1 Hour is the default interval|
 
-optional arguments:
-  -h, --help            show this help message and exit
-  -w /path/to/working/directory, --working-dir /path/to/working/directory
-                        Set the script's working directory.
-  -o /path/to/output/directory, --output-dir /path/to/output/directory
-                        Path to the ouptut directory. User expansion and
-                        environment variables acceptable.
-  --force               Force the downloading of files even if on the local
-                        system
-  -l /path/to/log/file.log, --log-file /path/to/log/file.log
-                        Path to the log file. User expansion and environment
-                        variables acceptable.
-  -n {0,1,2,3,4,5}, --log-level {0,1,2,3,4,5}
-                        Set numeric logger level. Levels 0-5 (NOTSET -
-                        CRITICAL) [default = 2]
+---
 
-Quantitative Precipitation Estimates and Forecasts:
-  Defining the product type and related parameters
+### QPF
 
-  {qpe,qpf,hrrr}        GribDownload.py [qpe]|[qpf]|[hrrr] --help to get help
-                        for these commands
+|Argument|Options|Description|
+|---|---|---|
+|-i <br /> --interval|6*,24,48,120|Forecast time intervals|
+|-c <br /> --cycle|HOUR (integer)|The cycle is NOAA's forecasting cycle hour as UTC.  The default hour is taken from system time|
 
-qpe, qpf, and hrrr are options that should be listed last.  Each
-product has additional options that can be defined.
+---
 
-qpe [-p, --product {GaugeCorr*, GaugeOnly, RadarOnly}] [-i, --interval {1*, 3, 6, 12, 24, 48, 72}]
-qpf [-i, --interval {6*,24,48,120}] [-c, --cycle hour (default=current UTC hour)]
-hrrr [-c, --cycle hour (default=current UTC hour)] [-f, --fct-hour range(s)(default=0-18)]
-    [--left-lon 0] [--right-lon 360] [--top-lat 90] [--bottom-lat -90], where range is 
-    the list of values for the HRRR forecast hours.  The range can include comma delimated
-    numbers and ranges.  Example 1,2,3,9-20 produces a list of forecast hours
-    1,2,3,9,10,11,12,13,14,15,16,17,18,19,20.
+### HRRR
 
-    *indicates the default value.
-```
+|Argument|Options|Description|
+|---|---|---|
+|-c <br /> --cycle|HOUR (integer)|The cycle is NOAA's forecasting cycle hour as UTC.  The default hour is taken from system time|
+|-f <br /> --fct-hour |Range and/or comma delimited hours|Default range is 0-18 hours resulting in 0,1,2,3,4,...18|
+|--left-lon |0|Extract a geographic subsection, Left Longitude|
+|--right-lon |360|Extract a geographic subsection, Right Longitude|
+|--top-lat |90|Extract a geographic subsection, Top Latitude|
+|--bottom-lat |-90|Extract a geographic subsection, Bottom Latitude|
 
-## Example Execution
+---
+
+## Command Line Usage
+
+- Print Help
+
+  ```python
+  python GribDownload.py -h [--help]
+  ```
+
+- Download QPE
+
+  ```python
+  python GribDownload.py -o /path/to/output/dir qpe
+  ```
 
 - Download QPE grib files not on user's system using defined working directory, defined output directory, and output log to file.
 
-  ```
+  ```python
   GribDownload.py --working-dir /path/to/working \
   --output-dir /path/to/output \
   --log-file /path/to/working/file.log \
   qpe
   ```
 
+![qpe_example](./assets/image/example_qpe.png)
+
 - Download 6-hour QPF for the latest forecast cycle based on user's system time.  System time and available forecasts don't always match resulting in no files downloaded.
 
-  ```
+  ```python
   GribDownload.py --working-dir /path/to/working \
   --output-dir /path/to/output \
   --log-file /path/to/working/file.log \
   qpf
   ```
+
+---
+
+## CAVI Implementation

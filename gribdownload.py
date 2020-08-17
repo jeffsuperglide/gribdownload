@@ -1,3 +1,4 @@
+##! C:\app\CWMS\CWMS-v3.1.1\CAVI\jython.exe
 """Download NOAA Grib2 files to the user's PC
 """
 
@@ -15,8 +16,6 @@ import Queue
 import threading
 
 # Set Constants
-_path = os.path.abspath(os.path.dirname(__file__))
-_name = os.path.basename(__file__).split('.')[0]
 max_thread = 4      # low thread count seems to keep out SSL errors
 
 mrms_base = 'https://mrms.ncep.noaa.gov/data/2D/{PRODUCT}_QPE_{HOUR}H/'
@@ -37,7 +36,7 @@ def local_logger(log_file=None, log_level=2):
     '''
     log_level *= 10
     # Start logging
-    logger = logging.getLogger(_name)
+    logger = logging.getLogger()
     logger.setLevel(log_level)
 
     formatter = logging.Formatter('%(asctime)s.%(msecs)03d - ' +
@@ -311,6 +310,9 @@ def download(q, outdir, index):
 
 ''' **************** The main part of the script **************** '''
 ''' Get the arguments parsed, set the logger, and show the logging level
+
+    No 'main()' used to allow for methods able to use below variables at
+    global scope.
 '''
 arg_parser = local_argparse()
 args = arg_parser.parse_args()
@@ -320,7 +322,10 @@ if not os.path.isdir(args.working_dir):
     logger.warning('Script Exiting!')
     sys.exit(1)
 
-logger = local_logger(log_file=args.log_file, log_level=args.log_level)
+# See if logger in dir().  This is mostly for CAVI implementation because
+# running more than once creates multiple lines of logger output.
+if "logger" not in dir():
+    logger = local_logger(log_file=args.log_file, log_level=args.log_level)
 args_dict = vars(args)
 
 ''' Adjust the observed UTC time to the appropriate cycle hour '''
