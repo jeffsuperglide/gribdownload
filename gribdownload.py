@@ -18,7 +18,7 @@ import threading
 # Set Constants
 max_thread = 4      # low thread count seems to keep out SSL errors
 
-mrms_base = 'https://mrms.ncep.noaa.gov/data/2D/{PRODUCT}_QPE_{HOUR}H/'
+mrms_base = 'https://mrms.ncep.noaa.gov/data/2D/{PRODUCT}_QPE_{HOUR}H{PASS}/'
 
 qpf_base = 'https://ftp.wpc.ncep.noaa.gov/2p5km_qpf/'
 
@@ -143,7 +143,7 @@ and the variable PRATE (precip rate).'''
     epi = '''qpe, qpf, and hrrr are options that should be listed last.  Each
 product has additional options that can be defined.
 
-qpe [-p, --product {GaugeCorr*, GaugeOnly, RadarOnly}] [-i, --interval {1*, 3, 6, 12, 24, 48, 72}]
+qpe [-p, --product {MultiSensor_Pass1*, MultiSensor_Pass2, RadarOnly}] [-i, --interval {1*, 3, 6, 12, 24, 48, 72}]
 qpf [-i, --interval {6*,24,48,120}] [-c, --cycle hour (default=current UTC hour)]
 hrrr [-c, --cycle hour (default=current UTC hour)] [-f, --fct-hour range(s)(default=0-18)]
     [--left-lon 0] [--right-lon 360] [--top-lat 90] [--bottom-lat -90], where range is 
@@ -167,8 +167,8 @@ hrrr [-c, --cycle hour (default=current UTC hour)] [-f, --fct-hour range(s)(defa
     # Quantitative Precipitation Estimates subparser
     parser_qpe = subparser.add_parser('qpe')
     parser_qpe.add_argument('-p', '--product', action='store', type=str,
-        choices=['GaugeCorr', 'GaugeOnly', 'RadarOnly'], default='GaugeCorr',
-        help="GaugeCorr, GaugeOnly, or RadarOnly; Default=%(default)s")
+        choices=['MultiSensor_Pass1', 'MultiSensor_Pass2', 'RadarOnly'], default='MultiSensor_Pass1',
+        help="MultiSensor_Pass1, MultiSensor_Pass2, or RadarOnly; Default=%(default)s")
     parser_qpe.add_argument('-i', '--interval', action='store', type=int,
         choices=[1, 3, 6, 12, 24, 48, 72], default=1,
         help="Hour Interval; Default=%(default)s")
@@ -317,16 +317,14 @@ def download(q, outdir, index):
 arg_parser = local_argparse()
 args = arg_parser.parse_args()
 
-if not os.path.isdir(args.working_dir):
+if not "logger" in dir():
+    logger = local_logger(log_file=args.log_file, log_level=args.log_level)
+args_dict = vars(args)
+
+if not os.path.isdir(args.output_dir):
     logger.warning('No ouput directory assigned!')
     logger.warning('Script Exiting!')
     sys.exit(1)
-
-# See if logger in dir().  This is mostly for CAVI implementation because
-# running more than once creates multiple lines of logger output.
-if "logger" not in dir():
-    logger = local_logger(log_file=args.log_file, log_level=args.log_level)
-args_dict = vars(args)
 
 ''' Adjust the observed UTC time to the appropriate cycle hour '''
 if args.subparser_name == 'qpf':
@@ -355,8 +353,18 @@ compare that to the list of files on the user's system
 '''
 
 if args.subparser_name == 'qpe':
-    baseurl = mrms_base.format(PRODUCT=args.product,
-        HOUR='{:02}'.format(args.interval))
+    _prod = ""
+    _pass = ""
+    if "_" in args.product:
+        _prod, _pass = args.product.split("_")
+        _pass = "_" + _pass
+    else:
+        _prod = args.product
+    baseurl = mrms_base.format(
+        PRODUCT=_prod,
+        HOUR='{:02}'.format(args.interval),
+        PASS=_pass
+        )
     regex = ur'>(MRMS\w*\.\d*_\d*-\d*\.grib2\.gz)<'
     files, urls = match_files(local_files, baseurl, regex, args.force)
     logger.debug('QPE files and URLs:')

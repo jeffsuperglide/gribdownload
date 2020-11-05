@@ -6,7 +6,7 @@ This Python script can be used to download Quantitative Precipitation Estimates 
 
 ## Installation
 
-This Grib downloader, `gribdownload`, was written in Python 2.7 to allow integration into CWMS/RTS CAVI.  Download from the `master` branch for the most stable version.  Users should review their available Python installation(s) to determine the best way for them to run this script.
+This Grib downloader, `gribdownload`, was written in Python 2.7 to allow integration into CWMS/RTS CAVI.  Download from the `master` branch for the most stable version.  Users should review their available Python installation(s) to determine the best way for them to run this script.  Adding a shebang and using `cmd` file (Windows) is a good way to run the script.
 
 ## Required Options/Arguments
 
@@ -19,7 +19,7 @@ This Grib downloader, `gribdownload`, was written in Python 2.7 to allow integra
 
 |Argument|Options|Description|
 |---|---|---|
-|-p <br /> --product|GaugeCorr*, GaugeOnly, or RadarOnly|Defines the QPE product type.  GaugeCorr is the default|
+|-p <br /> --product|MultiSensor_Pass1*, MultiSensor_Pass2, or RadarOnly|Defines the QPE product type.  MultiSensor_Pass1 is the default|
 |-i <br /> --interval|1*, 3, 6, 12, 24, 48, or 72|Defines the QPE total precipitation interval.  1 Hour is the default interval|
 
 ---
@@ -50,36 +50,32 @@ This Grib downloader, `gribdownload`, was written in Python 2.7 to allow integra
 
 - Print Help
 
-  ```python
+  ```cmd
   python GribDownload.py -h [--help]
   ```
 
 - Download QPE
 
-  ```python
+  ```cmd
   python GribDownload.py -o /path/to/output/dir qpe
   ```
 
 - Download QPE grib files not on user's system using defined working directory, defined output directory, and output log to file.
 
-  ```python
+  ```cmd
   GribDownload.py --working-dir /path/to/working \
   --output-dir /path/to/output \
   --log-file /path/to/working/file.log \
   qpe
   ```
 
-![qpe_example](./assets/image/example_qpe.png)
+  ![qpe_example](./assets/image/example_qpe.png)
 
 - Download 6-hour QPF for the latest forecast cycle based on user's system time.  System time and available forecasts don't always match resulting in no files downloaded.
 
-  ```python
+  ```cmd
   GribDownload.py --working-dir /path/to/working \
   --output-dir /path/to/output \
   --log-file /path/to/working/file.log \
   qpf
   ```
-
----
-
-## CAVI Implementation
