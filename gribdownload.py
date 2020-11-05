@@ -1,4 +1,3 @@
-##! C:\app\CWMS\CWMS-v3.1.1\CAVI\jython.exe
 """Download NOAA Grib2 files to the user's PC
 """
 
