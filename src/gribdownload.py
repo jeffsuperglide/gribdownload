@@ -1,7 +1,7 @@
-"""Download NOAA Grib2 files to the user's PC
+"""
+# Download NOAA Grib2 files to the user's PC
 """
 
-# Python Imports
 import os
 import re
 import sys
@@ -25,14 +25,14 @@ hrrr_file = 'hrrr.t{CYCLE:02}z.wrfsfcf{HOUR:02}.grib2'
 hrrr_base = 'https://nomads.ncep.noaa.gov/cgi-bin/filter_hrrr_2d.pl?file={FILE}&lev_surface=on&var_PRATE=on&leftlon={LLON}&rightlon={RLON}&toplat={TLAT}&bottomlat={BLAT}&dir=%2Fhrrr.{DATE}%2Fconus'
 
 def local_logger(log_file=None, log_level=2):
-    ''' Define a local logger for the main (global) space can get and use it
+    """ Define a local logger for the main (global) space can get and use it
     CRITICAL    50
     ERROR       40
     WARNING     30
     INFO        20
     DEBUG       10
     NOTSET      0
-    '''
+    """
     log_level *= 10
     # Start logging
     logger = logging.getLogger()
@@ -53,9 +53,9 @@ def local_logger(log_file=None, log_level=2):
         # try to get the log file's directory as described by the user
         try:
             log_dir = os.path.dirname(log_file)
-        except TypeError, ex:
+        except TypeError as ex:
             logger.error(ex)
-        except AttributeError, ex:
+        except AttributeError as ex:
             logger.error(ex)
         if log_dir:
             # try to get a logging handler
@@ -66,17 +66,17 @@ def local_logger(log_file=None, log_level=2):
                 #fh.setLevel(logging.NOTSET)
                 logger.addHandler(fh)
                 logger.info('Logging file set to: {}'.format(log_file))
-            except IOError, ex:
+            except IOError as ex:
                 logger.warning(ex)
                 logger.warning('Rotating File Handler not created.')
     
     return logger
 
 class PathExpandAction(argparse.Action):
-    ''' Argument parser action used to "expanduser" and "expandvars"
+    """ Argument parser action used to "expanduser" and "expandvars"
     
     Inheritance of argparse.Action using super() method to extend the base class
-    '''
+    """
     def __init__(self, option_strings, dest, nargs=None, **kwargs):
         if nargs is not None:
             raise Exception('"nargs" not allowed')
@@ -91,9 +91,9 @@ class PathExpandAction(argparse.Action):
             setattr(namespace, self.dest, values)
 
 def check_cycle(qpf, cycle):
-    ''' Take the input value and check against the available forecast cycles
+    """ Take the input value and check against the available forecast cycles
     as an hour.  The return will be a tuple of QPF6 and QPFx
-    '''
+    """
     if qpf == 6:
         cycles = [18,12,6,0]
     else:
@@ -104,18 +104,18 @@ def check_cycle(qpf, cycle):
             return x
 
 def set_working(s):
-    ''' Change the working directory using user input option
-    '''
+    """ Change the working directory using user input option
+    """
     try:
         os.chdir(s)
         return os.getcwd()
-    except OSError, ex:
+    except OSError as ex:
         raise Exception(ex)
         sys.exit(1)
 
 def set_forecast_hours(r):
-    ''' Parse the range (r) returning a list of hours for the HRRR forecast hours
-    '''
+    """ Parse the range (r) returning a list of hours for the HRRR forecast hours
+    """
     _list = list()
     vals = r.split(',')
     for v in vals:
@@ -130,16 +130,16 @@ def set_forecast_hours(r):
     return _list
 
 def local_argparse():
-    ''' Define configuration parser for the main (global)
-    '''
-    desc = '''Download Quantitative Precipitation Estimates (QPE), Quantitative
+    """ Define configuration parser for the main (global)
+    """
+    desc = """Download Quantitative Precipitation Estimates (QPE), Quantitative
 Precipitation Forecasts (QPF), or High-Resolution Rapid Refresh (HRRR)
 precipitation Gridded Binary (GRIB2) files.  These products are provided by
 NOAA on public websites.  QPE and QPF sources only provide a select number
 of observed (QPE) and forecasted (QPF) products.  HRRR files are downloaded
 from nomads.ncep.noaa.gov Grib Filter application extracting surface level
-and the variable PRATE (precip rate).'''
-    epi = '''qpe, qpf, and hrrr are options that should be listed last.  Each
+and the variable PRATE (precip rate)."""
+    epi = """qpe, qpf, and hrrr are options that should be listed last.  Each
 product has additional options that can be defined.
 
 qpe [-p, --product {MultiSensor_Pass1*, MultiSensor_Pass2, RadarOnly}] [-i, --interval {1*, 3, 6, 12, 24, 48, 72}]
@@ -151,7 +151,7 @@ hrrr [-c, --cycle hour (default=current UTC hour)] [-f, --fct-hour range(s)(defa
     1,2,3,9,10,11,12,13,14,15,16,17,18,19,20.
     
     *indicates the default value.
-'''
+"""
     
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -234,22 +234,22 @@ hrrr [-c, --cycle hour (default=current UTC hour)] [-f, --fct-hour range(s)(defa
     return parser
 
 def check_url(url):
-    ''' Check the url and return the code if good else false.
+    """ Check the url and return the code if good else false.
         Looking for a 200 to be good.
-    '''
+    """
     try:
         logger.info('Checking URL: {}'.format(url))
         if urllib.urlopen(url).getcode() == 200:
             return True
-    except IOError, ex:
+    except IOError as ex:
         logger.warning(ex)
         logger.warning('Returning "False"')
         return False
 
 def match_files(localfiles, url, regex, force):
-    ''' Compare files from QPE or QPF 6 hour website to those locally and return
+    """ Compare files from QPE or QPF 6 hour website to those locally and return
     a list of files and the full URL for each file
-    '''
+    """
     if not check_url(url):
         logger.warning('"{}" failed URL check.')
         logger.warning('Script Exiting!')
@@ -258,7 +258,7 @@ def match_files(localfiles, url, regex, force):
         open_html = urllib.urlopen(url)
         html = open_html.read()
         open_html.close()
-    except IOError, ex:
+    except IOError as ex:
         logger.error(ex)
         logger.error('Failed to open {}'.format(url))
         logger.error('Script Exiting!')
@@ -277,12 +277,12 @@ def match_files(localfiles, url, regex, force):
 
 
 def download(q, outdir, index):
-    ''' Method that runs as seperate threads
+    """ Method that runs as seperate threads
     
     While the queue has something, the thread will work on that item and then
     clear it when that item is done (queue.task_done).  The thread will try to
     open the url, read the file, and then write to the output directory.
-    '''
+    """
     while not q.empty():
         qval = q.get()
         url, fname = qval
@@ -297,7 +297,7 @@ def download(q, outdir, index):
             if fname.startswith('hrrr'):
                 logger.info(h['Content-Disposition'])
             logger.info('Thread {} - Download saved to: {}'.format(index, fn))
-        except IOError, ex:
+        except IOError as ex:
             logger.warning(ex)
         except KeyError:
             logger.warning('Forecast cycle not avaliable for {}.'.format(fname))
@@ -307,120 +307,126 @@ def download(q, outdir, index):
             q.task_done()
 
 
-''' **************** The main part of the script **************** '''
-''' Get the arguments parsed, set the logger, and show the logging level
+def main():
+    """ Get the arguments parsed, set the logger, and show the logging level
 
-    No 'main()' used to allow for methods able to use below variables at
-    global scope.
-'''
-arg_parser = local_argparse()
-args = arg_parser.parse_args()
+        No 'main()' used to allow for methods able to use below variables at
+        global scope.
+    """
+    global baseurl
+    global logger
+    
+    arg_parser = local_argparse()
+    args = arg_parser.parse_args()
 
-if not "logger" in dir():
-    logger = local_logger(log_file=args.log_file, log_level=args.log_level)
-args_dict = vars(args)
+    if not "logger" in dir():
+        logger = local_logger(log_file=args.log_file, log_level=args.log_level)
+    args_dict = vars(args)
 
-if not os.path.isdir(args.output_dir):
-    logger.warning('No ouput directory assigned!')
-    logger.warning('Script Exiting!')
-    sys.exit(1)
+    if not os.path.isdir(args.output_dir):
+        logger.warning('No ouput directory assigned!')
+        logger.warning('Script Exiting!')
+        sys.exit(1)
 
-''' Adjust the observed UTC time to the appropriate cycle hour '''
-if args.subparser_name == 'qpf':
-    args.cycle = check_cycle(args.interval, args.cycle)
-    logger.debug('Setting QPF cycle based on input cycle: {}'.format(args.cycle))
+    """ Adjust the observed UTC time to the appropriate cycle hour """
+    if args.subparser_name == 'qpf':
+        args.cycle = check_cycle(args.interval, args.cycle)
+        logger.debug('Setting QPF cycle based on input cycle: {}'.format(args.cycle))
 
-for arg, val in args_dict.iteritems():
-    logger.debug('ArgParser: {}={}'.format(arg, val))
+    for arg, val in args_dict.iteritems():
+        logger.debug('ArgParser: {}={}'.format(arg, val))
 
-''' Check the output directory exists and get the list of files within that
-directory to match later what is online
-'''
-if not os.path.isdir(args.output_dir):
-    logger.warning('"{}" not a directory'.format(
-        args.output_dir))
-    logger.warning('Script Exiting!')
-    sys.exit(1)
+    """ Check the output directory exists and get the list of files within that
+    directory to match later what is online
+    """
+    if not os.path.isdir(args.output_dir):
+        logger.warning('"{}" not a directory'.format(
+            args.output_dir))
+        logger.warning('Script Exiting!')
+        sys.exit(1)
 
-local_files = os.listdir(args.output_dir)
-logger.debug('Local Files:')
-[logger.debug('\t{}'.format(file)) for file in local_files]
+    local_files = os.listdir(args.output_dir)
+    logger.debug('Local Files:')
+    [logger.debug('\t{}'.format(file)) for file in local_files]
 
-''' Build the URL based on user's options and check that it is good.  If it
-is good, then read the URL parsing the available files to download and
-compare that to the list of files on the user's system
-'''
+    """ Build the URL based on user's options and check that it is good.  If it
+    is good, then read the URL parsing the available files to download and
+    compare that to the list of files on the user's system
+    """
 
-if args.subparser_name == 'qpe':
-    _prod = ""
-    _pass = ""
-    if "_" in args.product:
-        _prod, _pass = args.product.split("_")
-        _pass = "_" + _pass
-    else:
-        _prod = args.product
-    baseurl = mrms_base.format(
-        PRODUCT=_prod,
-        HOUR='{:02}'.format(args.interval),
-        PASS=_pass
-        )
-    regex = ur'>(MRMS\w*\.\d*_\d*-\d*\.grib2\.gz)<'
-    files, urls = match_files(local_files, baseurl, regex, args.force)
-    logger.debug('QPE files and URLs:')
-    [logger.debug('\t{}'.format(f)) for f in files]
-    [logger.debug('\t{}'.format(u)) for u in urls]
-elif args.subparser_name == 'qpf':
-    dy = datetime.datetime.utcnow().strftime('%d')
-    baseurl = qpf_base
-    regex = ur'>(p{:02}m_......{}{}f\d\d\d\.grb)<'.format(args.interval, dy,
-        args.cycle)
-    files, urls = match_files(local_files, baseurl, regex, args.force)
-    logger.debug('QPF files and URLs:')
-    [logger.debug(f) for f in files]
-    [logger.debug(u) for u in urls]
-elif args.subparser_name == 'hrrr':
-    urls = list()
-    matches = list()
-    # Create possible files to compare with what is already local
-    # Also, trim based on forcing or not
-    logger.debug('Files to get')
-    for h in args.fct_hour:
-        file = hrrr_file.format(CYCLE=args.cycle, HOUR=h)
-        matches.append(file)
-        logger.debug('\t{}'.format(file))
-    if args.force:
-        logger.info('Forcing download of files even if we have them')
-        files = matches
-    else:
-        files = list(set(matches) - set(local_files))
-    # Create all the URLs based on the list of files
-    for file in files:
-        urls.append(hrrr_base.format(FILE=file, LLON=args.llon, RLON=args.rlon,
-        TLAT=args.tlat, BLAT=args.blat,
-        DATE=datetime.datetime.utcnow().strftime('%Y%m%d')))
-    logger.debug('HRRR files and URLs:')
-    [logger.debug('\t{}'.format(f)) for f in files]
-    [logger.debug('\t{}'.format(u)) for u in urls]
-    logger.info('Captured {} files from website'.format(len(matches)))
-    logger.info('Need to get {} files for local'.format(len(files)))
+    if args.subparser_name == 'qpe':
+        _prod = ""
+        _pass = ""
+        if "_" in args.product:
+            _prod, _pass = args.product.split("_")
+            _pass = "_" + _pass
+        else:
+            _prod = args.product
+        baseurl = mrms_base.format(
+            PRODUCT=_prod,
+            HOUR='{:02}'.format(args.interval),
+            PASS=_pass
+            )
+        regex = ur'>(MRMS\w*\.\d*_\d*-\d*\.grib2\.gz)<'
+        files, urls = match_files(local_files, baseurl, regex, args.force)
+        logger.debug('QPE files and URLs:')
+        [logger.debug('\t{}'.format(f)) for f in files]
+        [logger.debug('\t{}'.format(u)) for u in urls]
+    elif args.subparser_name == 'qpf':
+        dy = datetime.datetime.utcnow().strftime('%d')
+        baseurl = qpf_base
+        regex = ur'>(p{:02}m_......{}{}f\d\d\d\.grb)<'.format(args.interval, dy,
+            args.cycle)
+        files, urls = match_files(local_files, baseurl, regex, args.force)
+        logger.debug('QPF files and URLs:')
+        [logger.debug(f) for f in files]
+        [logger.debug(u) for u in urls]
+    elif args.subparser_name == 'hrrr':
+        urls = list()
+        matches = list()
+        # Create possible files to compare with what is already local
+        # Also, trim based on forcing or not
+        logger.debug('Files to get')
+        for h in args.fct_hour:
+            file = hrrr_file.format(CYCLE=args.cycle, HOUR=h)
+            matches.append(file)
+            logger.debug('\t{}'.format(file))
+        if args.force:
+            logger.info('Forcing download of files even if we have them')
+            files = matches
+        else:
+            files = list(set(matches) - set(local_files))
+        # Create all the URLs based on the list of files
+        for file in files:
+            urls.append(hrrr_base.format(FILE=file, LLON=args.llon, RLON=args.rlon,
+            TLAT=args.tlat, BLAT=args.blat,
+            DATE=datetime.datetime.utcnow().strftime('%Y%m%d')))
+        logger.debug('HRRR files and URLs:')
+        [logger.debug('\t{}'.format(f)) for f in files]
+        [logger.debug('\t{}'.format(u)) for u in urls]
+        logger.info('Captured {} files from website'.format(len(matches)))
+        logger.info('Need to get {} files for local'.format(len(files)))
 
-''' Load a queue with the base url, filenames, and the output directory.
-After loading the queue, initialize multiple threads with "download" method
-to process all in the queue.
-'''
-que = Queue.Queue()
-for i, url in enumerate(urls):
-    que.put((url, files[i]))
-    logger.debug('Load Queue:')
-    logger.debug('\t{}'.format(url))
-    logger.debug('\t{}'.format(files[i]))
+    """ Load a queue with the base url, filenames, and the output directory.
+    After loading the queue, initialize multiple threads with "download" method
+    to process all in the queue.
+    """
+    que = Queue.Queue()
+    for i, url in enumerate(urls):
+        que.put((url, files[i]))
+        logger.debug('Load Queue:')
+        logger.debug('\t{}'.format(url))
+        logger.debug('\t{}'.format(files[i]))
 
-for i in range(min(que.qsize(), max_thread)):
-    t = threading.Thread(target=download, args=(que, args.output_dir, i))
-    t.daemon = True
-    t.start()
+    for i in range(min(que.qsize(), max_thread)):
+        t = threading.Thread(target=download, args=(que, args.output_dir, i))
+        t.daemon = True
+        t.start()
 
-logger.debug('Queue Join and wait')
-que.join()
+    logger.debug('Queue Join and wait')
+    que.join()
 
-logger.info('Script Done!')
+    logger.info('Script Done!')
+
+if __name__ == "__main__":
+    main()

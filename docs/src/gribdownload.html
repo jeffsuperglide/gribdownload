@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="content-type" content="text/html;charset=utf-8">
+  <title>gribdownload.py</title>
+  <link rel="stylesheet" href="../pycco.css">
+</head>
+<body>
+<div id='container'>
+  <div id="background"></div>
+  <div class='section'>
+    <div class='docs'><h1>gribdownload.py</h1></div>
+  </div>
+  <div class='clearall'>
+  <div class='section' id='section-0'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-0'>#</a>
+      </div>
+      <h1>Download NOAA Grib2 files to the user&rsquo;s PC</h1>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">urllib</span>
+<span class="kn">import</span> <span class="nn">urlparse</span>
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">logging.handlers</span>
+<span class="kn">import</span> <span class="nn">argparse</span>
+<span class="kn">import</span> <span class="nn">Queue</span>
+<span class="kn">import</span> <span class="nn">threading</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-1'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-1'>#</a>
+      </div>
+      <p>Set Constants</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre><span class="n">max_thread</span> <span class="o">=</span> <span class="mi">4</span>      <span class="c1"># low thread count seems to keep out SSL errors</span>
+
+<span class="n">mrms_base</span> <span class="o">=</span> <span class="s1">&#39;https://mrms.ncep.noaa.gov/data/2D/</span><span class="si">{PRODUCT}</span><span class="s1">_QPE_</span><span class="si">{HOUR}</span><span class="s1">H</span><span class="si">{PASS}</span><span class="s1">/&#39;</span>
+
+<span class="n">qpf_base</span> <span class="o">=</span> <span class="s1">&#39;https://ftp.wpc.ncep.noaa.gov/2p5km_qpf/&#39;</span>
+
+<span class="n">hrrr_file</span> <span class="o">=</span> <span class="s1">&#39;hrrr.t</span><span class="si">{CYCLE:02}</span><span class="s1">z.wrfsfcf</span><span class="si">{HOUR:02}</span><span class="s1">.grib2&#39;</span>
+<span class="n">hrrr_base</span> <span class="o">=</span> <span class="s1">&#39;https://nomads.ncep.noaa.gov/cgi-bin/filter_hrrr_2d.pl?file=</span><span class="si">{FILE}</span><span class="s1">&amp;lev_surface=on&amp;var_PRATE=on&amp;leftlon=</span><span class="si">{LLON}</span><span class="s1">&amp;rightlon=</span><span class="si">{RLON}</span><span class="s1">&amp;toplat=</span><span class="si">{TLAT}</span><span class="s1">&amp;bottomlat=</span><span class="si">{BLAT}</span><span class="s1">&amp;dir=</span><span class="si">%2F</span><span class="s1">hrrr.</span><span class="si">{DATE}%2F</span><span class="s1">conus&#39;</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-2'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-2'>#</a>
+      </div>
+      <p>Define a local logger for the main (global) space can get and use it</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre><span class="k">def</span> <span class="nf">local_logger</span><span class="p">(</span><span class="n">log_file</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">log_level</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-3'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-3'>#</a>
+      </div>
+      <pre><code>CRITICAL    50
+ERROR       40
+WARNING     30
+INFO        20
+DEBUG       10
+NOTSET      0
+</code></pre>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">log_level</span> <span class="o">*=</span> <span class="mi">10</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-4'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-4'>#</a>
+      </div>
+      <p>Start logging</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">()</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">log_level</span><span class="p">)</span>
+
+    <span class="n">formatter</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">%(asctime)s</span><span class="s1">.</span><span class="si">%(msecs)03d</span><span class="s1"> - &#39;</span> <span class="o">+</span>
+        <span class="s1">&#39;</span><span class="si">%(name)s</span><span class="s1">:</span><span class="si">%(funcName)15s</span><span class="s1"> - </span><span class="si">%(levelname)-5s</span><span class="s1"> - </span><span class="si">%(message)s</span><span class="s1">&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1">T%H:%M:%S&#39;</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-5'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-5'>#</a>
+      </div>
+      <p>Console logger</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">ch</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">()</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-6'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-6'>#</a>
+      </div>
+      <p>ch.setLevel(logging.NOTSET)</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">ch</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">formatter</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">ch</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Logging set to a StreamHandler (Console)&#39;</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-7'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-7'>#</a>
+      </div>
+      <p>File logger</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="k">if</span> <span class="n">log_file</span><span class="p">:</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-8'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-8'>#</a>
+      </div>
+      <p>try to get the log file&rsquo;s directory as described by the user</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>        <span class="k">try</span><span class="p">:</span>
+            <span class="n">log_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">log_file</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">TypeError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">ex</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">ex</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">log_dir</span><span class="p">:</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-9'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-9'>#</a>
+      </div>
+      <p>try to get a logging handler</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>            <span class="k">try</span><span class="p">:</span>
+                <span class="n">fh</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">handlers</span><span class="o">.</span><span class="n">RotatingFileHandler</span><span class="p">(</span><span class="n">log_file</span><span class="p">,</span> <span class="n">maxBytes</span><span class="o">=</span><span class="mi">5000000</span><span class="p">,</span>
+                    <span class="n">backupCount</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">fh</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">formatter</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-10'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-10'>#</a>
+      </div>
+      <p>fh.setLevel(logging.NOTSET)</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>                <span class="n">logger</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">fh</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Logging file set to: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">log_file</span><span class="p">))</span>
+            <span class="k">except</span> <span class="ne">IOError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">ex</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;Rotating File Handler not created.&#39;</span><span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">logger</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-11'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-11'>#</a>
+      </div>
+      <p>Argument parser action used to &ldquo;expanduser&rdquo; and &ldquo;expandvars&rdquo;</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre><span class="k">class</span> <span class="nc">PathExpandAction</span><span class="p">(</span><span class="n">argparse</span><span class="o">.</span><span class="n">Action</span><span class="p">):</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-12'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-12'>#</a>
+      </div>
+      <pre><code>
+Inheritance of argparse.Action using super() method to extend the base class
+</code></pre>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">option_strings</span><span class="p">,</span> <span class="n">dest</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">nargs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s1">&#39;&quot;nargs&quot; not allowed&#39;</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">PathExpandAction</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">option_strings</span><span class="p">,</span> <span class="n">dest</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-13'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-13'>#</a>
+      </div>
+      
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">parser</span><span class="p">,</span> <span class="n">namespace</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">option_string</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">values</span> <span class="o">==</span> <span class="s1">&#39;-&#39;</span><span class="p">:</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">namespace</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dest</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expandvars</span><span class="p">(</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">values</span><span class="p">)))</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">namespace</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dest</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-14'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-14'>#</a>
+      </div>
+      <p>Take the input value and check against the available forecast cycles</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre><span class="k">def</span> <span class="nf">check_cycle</span><span class="p">(</span><span class="n">qpf</span><span class="p">,</span> <span class="n">cycle</span><span class="p">):</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-15'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-15'>#</a>
+      </div>
+      <pre><code>as an hour.  The return will be a tuple of QPF6 and QPFx
+</code></pre>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="k">if</span> <span class="n">qpf</span> <span class="o">==</span> <span class="mi">6</span><span class="p">:</span>
+        <span class="n">cycles</span> <span class="o">=</span> <span class="p">[</span><span class="mi">18</span><span class="p">,</span><span class="mi">12</span><span class="p">,</span><span class="mi">6</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">cycles</span> <span class="o">=</span> <span class="p">[</span><span class="mi">12</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">cycles</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">cycle</span> <span class="o">&gt;=</span> <span class="n">x</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Returning </span><span class="si">{}</span><span class="s1"> as the forcast cycle hour&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">x</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-16'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-16'>#</a>
+      </div>
+      <p>Change the working directory using user input option</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre><span class="k">def</span> <span class="nf">set_working</span><span class="p">(</span><span class="n">s</span><span class="p">):</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-17'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-17'>#</a>
+      </div>
+      
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="k">try</span><span class="p">:</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="n">ex</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-18'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-18'>#</a>
+      </div>
+      <p>Parse the range (r) returning a list of hours for the HRRR forecast hours</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre><span class="k">def</span> <span class="nf">set_forecast_hours</span><span class="p">(</span><span class="n">r</span><span class="p">):</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-19'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-19'>#</a>
+      </div>
+      
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+    <span class="n">vals</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;,&#39;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">vals</span><span class="p">:</span>
+        <span class="k">if</span> <span class="s1">&#39;-&#39;</span> <span class="ow">in</span> <span class="n">v</span><span class="p">:</span>
+            <span class="n">start</span><span class="p">,</span> <span class="n">stop</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;-&#39;</span><span class="p">)</span>
+            <span class="n">rng</span> <span class="o">=</span> <span class="nb">range</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">start</span><span class="p">),</span><span class="nb">int</span><span class="p">(</span><span class="n">stop</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">_list</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_list</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">v</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-20'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-20'>#</a>
+      </div>
+      <p>get everything as an integer</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">_list</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">_list</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-21'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-21'>#</a>
+      </div>
+      <p>Define configuration parser for the main (global)</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre><span class="k">def</span> <span class="nf">local_argparse</span><span class="p">():</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-22'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-22'>#</a>
+      </div>
+      
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">desc</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;Download Quantitative Precipitation Estimates (QPE), Quantitative</span>
+<span class="s2">Precipitation Forecasts (QPF), or High-Resolution Rapid Refresh (HRRR)</span>
+<span class="s2">precipitation Gridded Binary (GRIB2) files.  These products are provided by</span>
+<span class="s2">NOAA on public websites.  QPE and QPF sources only provide a select number</span>
+<span class="s2">of observed (QPE) and forecasted (QPF) products.  HRRR files are downloaded</span>
+<span class="s2">from nomads.ncep.noaa.gov Grib Filter application extracting surface level</span>
+<span class="s2">and the variable PRATE (precip rate).&quot;&quot;&quot;</span>
+    <span class="n">epi</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;qpe, qpf, and hrrr are options that should be listed last.  Each</span>
+<span class="s2">product has additional options that can be defined.</span>
+
+<span class="s2">qpe [-p, --product {MultiSensor_Pass1*, MultiSensor_Pass2, RadarOnly}] [-i, --interval {1*, 3, 6, 12, 24, 48, 72}]</span>
+<span class="s2">qpf [-i, --interval {6*,24,48,120}] [-c, --cycle hour (default=current UTC hour)]</span>
+<span class="s2">hrrr [-c, --cycle hour (default=current UTC hour)] [-f, --fct-hour range(s)(default=0-18)]</span>
+<span class="s2">    [--left-lon 0] [--right-lon 360] [--top-lat 90] [--bottom-lat -90], where range is </span>
+<span class="s2">    the list of values for the HRRR forecast hours.  The range can include comma delimated</span>
+<span class="s2">    numbers and ranges.  Example 1,2,3,9-20 produces a list of forecast hours</span>
+<span class="s2">    1,2,3,9,10,11,12,13,14,15,16,17,18,19,20.</span>
+<span class="s2">    </span>
+<span class="s2">    *indicates the default value.</span>
+<span class="s2">&quot;&quot;&quot;</span>
+    
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+        <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">RawDescriptionHelpFormatter</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="n">desc</span><span class="p">,</span>
+        <span class="n">epilog</span><span class="o">=</span><span class="n">epi</span><span class="p">)</span>
+    <span class="n">subparser</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_subparsers</span><span class="p">(</span>
+        <span class="n">title</span><span class="o">=</span><span class="s1">&#39;Quantitative Precipitation Estimates and Forecasts&#39;</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Defining the product type and related parameters&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;GribDownload.py [qpe]|[qpf]|[hrrr] --help to get help for these commands&#39;</span><span class="p">,</span>
+        <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;subparser_name&#39;</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-23'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-23'>#</a>
+      </div>
+      <p>Quantitative Precipitation Estimates subparser</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">parser_qpe</span> <span class="o">=</span> <span class="n">subparser</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s1">&#39;qpe&#39;</span><span class="p">)</span>
+    <span class="n">parser_qpe</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-p&#39;</span><span class="p">,</span> <span class="s1">&#39;--product&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store&#39;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span>
+        <span class="n">choices</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;MultiSensor_Pass1&#39;</span><span class="p">,</span> <span class="s1">&#39;MultiSensor_Pass2&#39;</span><span class="p">,</span> <span class="s1">&#39;RadarOnly&#39;</span><span class="p">],</span> <span class="n">default</span><span class="o">=</span><span class="s1">&#39;MultiSensor_Pass1&#39;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;MultiSensor_Pass1, MultiSensor_Pass2, or RadarOnly; Default=</span><span class="si">%(default)s</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">parser_qpe</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-i&#39;</span><span class="p">,</span> <span class="s1">&#39;--interval&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store&#39;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
+        <span class="n">choices</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">48</span><span class="p">,</span> <span class="mi">72</span><span class="p">],</span> <span class="n">default</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Hour Interval; Default=</span><span class="si">%(default)s</span><span class="s2">&quot;</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-24'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-24'>#</a>
+      </div>
+      <p>Quantitative Precipitation Forecast subparser</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">parser_qpf</span> <span class="o">=</span> <span class="n">subparser</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s1">&#39;qpf&#39;</span><span class="p">)</span>
+    <span class="n">parser_qpf</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-i&#39;</span><span class="p">,</span> <span class="s1">&#39;--interval&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store&#39;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
+        <span class="n">choices</span><span class="o">=</span><span class="p">[</span><span class="mi">6</span><span class="p">,</span><span class="mi">24</span><span class="p">,</span><span class="mi">48</span><span class="p">,</span><span class="mi">120</span><span class="p">],</span> <span class="n">default</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Hour Interval; Default=</span><span class="si">%(default)s</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">parser_qpf</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-c&#39;</span><span class="p">,</span> <span class="s1">&#39;--cycle&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store&#39;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s1">&#39;%H&#39;</span><span class="p">),</span> <span class="n">metavar</span><span class="o">=</span><span class="s1">&#39;h&#39;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Define the forecast cycle, where H is hour; Default to current UTC hour (e.g., </span><span class="si">%(default)s</span><span class="s2">)&quot;</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-25'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-25'>#</a>
+      </div>
+      <p>Quantitative Precipitation Forecast subparser for HRRR</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">parser_hrrr</span> <span class="o">=</span> <span class="n">subparser</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s1">&#39;hrrr&#39;</span><span class="p">)</span>
+    <span class="n">parser_hrrr</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-c&#39;</span><span class="p">,</span><span class="s1">&#39;--cycle&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store&#39;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s1">&#39;%H&#39;</span><span class="p">),</span> <span class="n">metavar</span><span class="o">=</span><span class="s1">&#39;H&#39;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Define the forecast cycle, where H is hour; Default to current UTC hour (e.g., </span><span class="si">%(default)s</span><span class="s2">)&quot;</span><span class="p">,</span>
+        <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;cycle&#39;</span><span class="p">)</span>
+    <span class="n">parser_hrrr</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-f&#39;</span><span class="p">,</span><span class="s1">&#39;--fct-hour&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store&#39;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="s1">&#39;0-18&#39;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">set_forecast_hours</span><span class="p">,</span> <span class="n">metavar</span><span class="o">=</span><span class="s1">&#39;1,2,5-9&#39;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;List of hours (0-18); Default List = </span><span class="si">%(default)s</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;fct_hour&#39;</span><span class="p">)</span>
+    <span class="n">parser_hrrr</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;--left-lon&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store&#39;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">metavar</span><span class="o">=</span><span class="s1">&#39;0&#39;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Define the left longitude; Use negative numbers for south and west; Default=</span><span class="si">%(default)s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;llon&#39;</span><span class="p">)</span>
+    <span class="n">parser_hrrr</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;--right-lon&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store&#39;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">360</span><span class="p">,</span> <span class="n">metavar</span><span class="o">=</span><span class="s1">&#39;360&#39;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Define the right longitude; Use negative numbers for south and west; Default=</span><span class="si">%(default)s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;rlon&#39;</span><span class="p">)</span>
+    <span class="n">parser_hrrr</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;--top-lat&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store&#39;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">90</span><span class="p">,</span> <span class="n">metavar</span><span class="o">=</span><span class="s1">&#39;90&#39;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Define the top latitude; Use negative numbers for south and west; Default=</span><span class="si">%(default)s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;tlat&#39;</span><span class="p">)</span>
+    <span class="n">parser_hrrr</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;--bottom-lat&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store&#39;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=-</span><span class="mi">90</span><span class="p">,</span> <span class="n">metavar</span><span class="o">=</span><span class="s1">&#39;-90&#39;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Define the bottom latitude; Use negative numbers for south and west; Default=</span><span class="si">%(default)s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;blat&#39;</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-26'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-26'>#</a>
+      </div>
+      <p>Set the working directory</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-w&#39;</span><span class="p">,</span> <span class="s1">&#39;--working-dir&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store&#39;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">set_working</span><span class="p">,</span>
+        <span class="n">metavar</span><span class="o">=</span><span class="s1">&#39;/path/to/working/directory&#39;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Set the script&#39;s working directory.&quot;</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-27'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-27'>#</a>
+      </div>
+      <p>Define output file</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-o&#39;</span><span class="p">,</span> <span class="s1">&#39;--output-dir&#39;</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">action</span><span class="o">=</span><span class="n">PathExpandAction</span><span class="p">,</span><span class="n">metavar</span><span class="o">=</span><span class="s1">&#39;/path/to/output/directory&#39;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Path to the ouptut directory.  User expansion and environment &quot;</span> <span class="o">+</span>
+        <span class="s2">&quot;variables acceptable.&quot;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;output_dir&#39;</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-28'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-28'>#</a>
+      </div>
+      <p>Force the download of files no matter if already on local</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;--force&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store_true&#39;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Force the downloading of files even if on the local system&quot;</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-29'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-29'>#</a>
+      </div>
+      <p>Define log file for logger</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-l&#39;</span><span class="p">,</span> <span class="s1">&#39;--log-file&#39;</span><span class="p">,</span><span class="n">action</span><span class="o">=</span><span class="n">PathExpandAction</span><span class="p">,</span>
+        <span class="n">metavar</span><span class="o">=</span><span class="s1">&#39;/path/to/log/file.log&#39;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Path to the log file.  User expansion and environment &quot;</span> <span class="o">+</span>
+        <span class="s2">&quot;variables acceptable.&quot;</span><span class="p">,</span><span class="n">dest</span><span class="o">=</span><span class="s1">&#39;log_file&#39;</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-30'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-30'>#</a>
+      </div>
+      <p>Logger level</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-n&#39;</span><span class="p">,</span> <span class="s1">&#39;--log-level&#39;</span><span class="p">,</span><span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">choices</span><span class="o">=</span><span class="nb">range</span><span class="p">(</span><span class="mi">6</span><span class="p">),</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Set numeric logger level.  Levels 0-5 (NOTSET - CRITICAL) &quot;</span> <span class="o">+</span>
+        <span class="s2">&quot;[default = </span><span class="si">%(default)s</span><span class="s2">]&quot;</span><span class="p">,</span><span class="n">dest</span><span class="o">=</span><span class="s1">&#39;log_level&#39;</span><span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">parser</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-31'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-31'>#</a>
+      </div>
+      <p>Check the url and return the code if good else false.</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre><span class="k">def</span> <span class="nf">check_url</span><span class="p">(</span><span class="n">url</span><span class="p">):</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-32'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-32'>#</a>
+      </div>
+      <p>Looking for a 200 to be good.</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="k">try</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Checking URL: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">url</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">urllib</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="n">url</span><span class="p">)</span><span class="o">.</span><span class="n">getcode</span><span class="p">()</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">except</span> <span class="ne">IOError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">ex</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;Returning &quot;False&quot;&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">False</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-33'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-33'>#</a>
+      </div>
+      <p>Compare files from QPE or QPF 6 hour website to those locally and return</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre><span class="k">def</span> <span class="nf">match_files</span><span class="p">(</span><span class="n">localfiles</span><span class="p">,</span> <span class="n">url</span><span class="p">,</span> <span class="n">regex</span><span class="p">,</span> <span class="n">force</span><span class="p">):</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-34'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-34'>#</a>
+      </div>
+      <pre><code>a list of files and the full URL for each file
+</code></pre>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="k">if</span> <span class="ow">not</span> <span class="n">check_url</span><span class="p">(</span><span class="n">url</span><span class="p">):</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;&quot;</span><span class="si">{}</span><span class="s1">&quot; failed URL check.&#39;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;Script Exiting!&#39;</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">open_html</span> <span class="o">=</span> <span class="n">urllib</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+        <span class="n">html</span> <span class="o">=</span> <span class="n">open_html</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="n">open_html</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">IOError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">ex</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s1">&#39;Failed to open </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">url</span><span class="p">))</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s1">&#39;Script Exiting!&#39;</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">matches</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">regex</span><span class="p">,</span> <span class="n">html</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">MULTILINE</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">force</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Forcing download of files even if we have them.&#39;</span><span class="p">)</span>
+        <span class="n">files</span> <span class="o">=</span> <span class="n">matches</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">files</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">matches</span><span class="p">)</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">localfiles</span><span class="p">))</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Captured </span><span class="si">{}</span><span class="s1"> files from website&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">matches</span><span class="p">)))</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Need to get </span><span class="si">{}</span><span class="s1"> files for local&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">)))</span>
+    <span class="n">files</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
+    <span class="n">urls</span> <span class="o">=</span> <span class="p">[</span><span class="n">urlparse</span><span class="o">.</span><span class="n">urljoin</span><span class="p">(</span><span class="n">baseurl</span><span class="p">,</span> <span class="n">file</span><span class="p">)</span> <span class="k">for</span> <span class="n">file</span> <span class="ow">in</span> <span class="n">files</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">files</span><span class="p">,</span> <span class="n">urls</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-35'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-35'>#</a>
+      </div>
+      <p>Method that runs as seperate threads</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre><span class="k">def</span> <span class="nf">download</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">outdir</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-36'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-36'>#</a>
+      </div>
+      <pre><code>
+While the queue has something, the thread will work on that item and then
+clear it when that item is done (queue.task_done).  The thread will try to
+open the url, read the file, and then write to the output directory.
+</code></pre>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="k">while</span> <span class="ow">not</span> <span class="n">q</span><span class="o">.</span><span class="n">empty</span><span class="p">():</span>
+        <span class="n">qval</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+        <span class="n">url</span><span class="p">,</span> <span class="n">fname</span> <span class="o">=</span> <span class="n">qval</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-37'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-37'>#</a>
+      </div>
+      <pre><code>   url = urlparse.urljoin(baseurl, file)
+</code></pre>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>        <span class="n">outputfile</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">outdir</span><span class="p">,</span> <span class="n">fname</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Thread </span><span class="si">{}</span><span class="s1"> - try retrieve: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">url</span><span class="p">))</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Thread </span><span class="si">{}</span><span class="s1"> - try save to: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">outputfile</span><span class="p">))</span>
+            <span class="n">fn</span><span class="p">,</span> <span class="n">h</span> <span class="o">=</span> <span class="n">urllib</span><span class="o">.</span><span class="n">urlretrieve</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">outputfile</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-38'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-38'>#</a>
+      </div>
+      <p>Files that are not available will raise the KeyError exception
+when trying to log the &lsquo;Content-Disposition&rsquo;</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>            <span class="k">if</span> <span class="n">fname</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;hrrr&#39;</span><span class="p">):</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">h</span><span class="p">[</span><span class="s1">&#39;Content-Disposition&#39;</span><span class="p">])</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Thread </span><span class="si">{}</span><span class="s1"> - Download saved to: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">fn</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">IOError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">ex</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;Forecast cycle not avaliable for </span><span class="si">{}</span><span class="s1">.&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fname</span><span class="p">))</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Removing downloaded file attempt.&#39;</span><span class="p">)</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">q</span><span class="o">.</span><span class="n">task_done</span><span class="p">()</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-39'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-39'>#</a>
+      </div>
+      <p>Get the arguments parsed, set the logger, and show the logging level</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre><span class="k">def</span> <span class="nf">main</span><span class="p">():</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-40'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-40'>#</a>
+      </div>
+      <p>No &lsquo;main()&rsquo; used to allow for methods able to use below variables at
+   global scope.</p>
+<p>Adjust the observed UTC time to the appropriate cycle hour</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="k">global</span> <span class="n">baseurl</span>
+    <span class="k">global</span> <span class="n">logger</span>
+    
+    <span class="n">arg_parser</span> <span class="o">=</span> <span class="n">local_argparse</span><span class="p">()</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="n">arg_parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="s2">&quot;logger&quot;</span> <span class="ow">in</span> <span class="nb">dir</span><span class="p">():</span>
+        <span class="n">logger</span> <span class="o">=</span> <span class="n">local_logger</span><span class="p">(</span><span class="n">log_file</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">log_file</span><span class="p">,</span> <span class="n">log_level</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">log_level</span><span class="p">)</span>
+    <span class="n">args_dict</span> <span class="o">=</span> <span class="nb">vars</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">output_dir</span><span class="p">):</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;No ouput directory assigned!&#39;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;Script Exiting!&#39;</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-41'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-41'>#</a>
+      </div>
+      <p>Check the output directory exists and get the list of files within that</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">subparser_name</span> <span class="o">==</span> <span class="s1">&#39;qpf&#39;</span><span class="p">:</span>
+        <span class="n">args</span><span class="o">.</span><span class="n">cycle</span> <span class="o">=</span> <span class="n">check_cycle</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">interval</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">cycle</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Setting QPF cycle based on input cycle: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">cycle</span><span class="p">))</span>
+
+    <span class="k">for</span> <span class="n">arg</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">args_dict</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;ArgParser: </span><span class="si">{}</span><span class="s1">=</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">val</span><span class="p">))</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-42'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-42'>#</a>
+      </div>
+      <pre><code>directory to match later what is online
+</code></pre>
+<p>Build the URL based on user&rsquo;s options and check that it is good.  If it</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">output_dir</span><span class="p">):</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;&quot;</span><span class="si">{}</span><span class="s1">&quot; not a directory&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+            <span class="n">args</span><span class="o">.</span><span class="n">output_dir</span><span class="p">))</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;Script Exiting!&#39;</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">local_files</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">output_dir</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Local Files:&#39;</span><span class="p">)</span>
+    <span class="p">[</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\t</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">file</span><span class="p">))</span> <span class="k">for</span> <span class="n">file</span> <span class="ow">in</span> <span class="n">local_files</span><span class="p">]</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-43'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-43'>#</a>
+      </div>
+      <pre><code>is good, then read the URL parsing the available files to download and
+compare that to the list of files on the user's system
+</code></pre>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">subparser_name</span> <span class="o">==</span> <span class="s1">&#39;qpe&#39;</span><span class="p">:</span>
+        <span class="n">_prod</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">_pass</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">if</span> <span class="s2">&quot;_&quot;</span> <span class="ow">in</span> <span class="n">args</span><span class="o">.</span><span class="n">product</span><span class="p">:</span>
+            <span class="n">_prod</span><span class="p">,</span> <span class="n">_pass</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">product</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span>
+            <span class="n">_pass</span> <span class="o">=</span> <span class="s2">&quot;_&quot;</span> <span class="o">+</span> <span class="n">_pass</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_prod</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">product</span>
+        <span class="n">baseurl</span> <span class="o">=</span> <span class="n">mrms_base</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+            <span class="n">PRODUCT</span><span class="o">=</span><span class="n">_prod</span><span class="p">,</span>
+            <span class="n">HOUR</span><span class="o">=</span><span class="s1">&#39;</span><span class="si">{:02}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">interval</span><span class="p">),</span>
+            <span class="n">PASS</span><span class="o">=</span><span class="n">_pass</span>
+            <span class="p">)</span>
+        <span class="n">regex</span> <span class="o">=</span> <span class="n">ur</span><span class="s1">&#39;&gt;(MRMS\w*\.\d*_\d*-\d*\.grib2\.gz)&lt;&#39;</span>
+        <span class="n">files</span><span class="p">,</span> <span class="n">urls</span> <span class="o">=</span> <span class="n">match_files</span><span class="p">(</span><span class="n">local_files</span><span class="p">,</span> <span class="n">baseurl</span><span class="p">,</span> <span class="n">regex</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">force</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;QPE files and URLs:&#39;</span><span class="p">)</span>
+        <span class="p">[</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\t</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">f</span><span class="p">))</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span><span class="p">]</span>
+        <span class="p">[</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\t</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">u</span><span class="p">))</span> <span class="k">for</span> <span class="n">u</span> <span class="ow">in</span> <span class="n">urls</span><span class="p">]</span>
+    <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">subparser_name</span> <span class="o">==</span> <span class="s1">&#39;qpf&#39;</span><span class="p">:</span>
+        <span class="n">dy</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">%d</span><span class="s1">&#39;</span><span class="p">)</span>
+        <span class="n">baseurl</span> <span class="o">=</span> <span class="n">qpf_base</span>
+        <span class="n">regex</span> <span class="o">=</span> <span class="n">ur</span><span class="s1">&#39;&gt;(p</span><span class="si">{:02}</span><span class="s1">m_......</span><span class="si">{}{}</span><span class="s1">f\d\d\d\.grb)&lt;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">interval</span><span class="p">,</span> <span class="n">dy</span><span class="p">,</span>
+            <span class="n">args</span><span class="o">.</span><span class="n">cycle</span><span class="p">)</span>
+        <span class="n">files</span><span class="p">,</span> <span class="n">urls</span> <span class="o">=</span> <span class="n">match_files</span><span class="p">(</span><span class="n">local_files</span><span class="p">,</span> <span class="n">baseurl</span><span class="p">,</span> <span class="n">regex</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">force</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;QPF files and URLs:&#39;</span><span class="p">)</span>
+        <span class="p">[</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">f</span><span class="p">)</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span><span class="p">]</span>
+        <span class="p">[</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">u</span><span class="p">)</span> <span class="k">for</span> <span class="n">u</span> <span class="ow">in</span> <span class="n">urls</span><span class="p">]</span>
+    <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">subparser_name</span> <span class="o">==</span> <span class="s1">&#39;hrrr&#39;</span><span class="p">:</span>
+        <span class="n">urls</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+        <span class="n">matches</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-44'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-44'>#</a>
+      </div>
+      <p>Create possible files to compare with what is already local
+Also, trim based on forcing or not</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Files to get&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">args</span><span class="o">.</span><span class="n">fct_hour</span><span class="p">:</span>
+            <span class="n">file</span> <span class="o">=</span> <span class="n">hrrr_file</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">CYCLE</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">cycle</span><span class="p">,</span> <span class="n">HOUR</span><span class="o">=</span><span class="n">h</span><span class="p">)</span>
+            <span class="n">matches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\t</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">file</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">force</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Forcing download of files even if we have them&#39;</span><span class="p">)</span>
+            <span class="n">files</span> <span class="o">=</span> <span class="n">matches</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">files</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">matches</span><span class="p">)</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">local_files</span><span class="p">))</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-45'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-45'>#</a>
+      </div>
+      <p>Create all the URLs based on the list of files
+Load a queue with the base url, filenames, and the output directory.</p>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>        <span class="k">for</span> <span class="n">file</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+            <span class="n">urls</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">hrrr_base</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">FILE</span><span class="o">=</span><span class="n">file</span><span class="p">,</span> <span class="n">LLON</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">llon</span><span class="p">,</span> <span class="n">RLON</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">rlon</span><span class="p">,</span>
+            <span class="n">TLAT</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">tlat</span><span class="p">,</span> <span class="n">BLAT</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">blat</span><span class="p">,</span>
+            <span class="n">DATE</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s1">&#39;%Y%m</span><span class="si">%d</span><span class="s1">&#39;</span><span class="p">)))</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;HRRR files and URLs:&#39;</span><span class="p">)</span>
+        <span class="p">[</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\t</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">f</span><span class="p">))</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span><span class="p">]</span>
+        <span class="p">[</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\t</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">u</span><span class="p">))</span> <span class="k">for</span> <span class="n">u</span> <span class="ow">in</span> <span class="n">urls</span><span class="p">]</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Captured </span><span class="si">{}</span><span class="s1"> files from website&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">matches</span><span class="p">)))</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Need to get </span><span class="si">{}</span><span class="s1"> files for local&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">)))</span></pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+  <div class='section' id='section-46'>
+    <div class='docs'>
+      <div class='octowrap'>
+        <a class='octothorpe' href='#section-46'>#</a>
+      </div>
+      <pre><code>After loading the queue, initialize multiple threads with "download" method
+to process all in the queue.
+</code></pre>
+    </div>
+    <div class='code'>
+      <div class="highlight"><pre>    <span class="n">que</span> <span class="o">=</span> <span class="n">Queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">url</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">urls</span><span class="p">):</span>
+        <span class="n">que</span><span class="o">.</span><span class="n">put</span><span class="p">((</span><span class="n">url</span><span class="p">,</span> <span class="n">files</span><span class="p">[</span><span class="n">i</span><span class="p">]))</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Load Queue:&#39;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\t</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">url</span><span class="p">))</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\t</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">files</span><span class="p">[</span><span class="n">i</span><span class="p">]))</span>
+
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">que</span><span class="o">.</span><span class="n">qsize</span><span class="p">(),</span> <span class="n">max_thread</span><span class="p">)):</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">download</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">que</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">output_dir</span><span class="p">,</span> <span class="n">i</span><span class="p">))</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">daemon</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Queue Join and wait&#39;</span><span class="p">)</span>
+    <span class="n">que</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Script Done!&#39;</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+
+</pre></div>
+    </div>
+  </div>
+  <div class='clearall'></div>
+</div>
+</body>
