@@ -53,9 +53,9 @@ def local_logger(log_file=None, log_level=2):
         # try to get the log file's directory as described by the user
         try:
             log_dir = os.path.dirname(log_file)
-        except TypeError, ex:
+        except TypeError as ex:
             logger.error(ex)
-        except AttributeError, ex:
+        except AttributeError as ex:
             logger.error(ex)
         if log_dir:
             # try to get a logging handler
@@ -66,7 +66,7 @@ def local_logger(log_file=None, log_level=2):
                 #fh.setLevel(logging.NOTSET)
                 logger.addHandler(fh)
                 logger.info('Logging file set to: {}'.format(log_file))
-            except IOError, ex:
+            except IOError as ex:
                 logger.warning(ex)
                 logger.warning('Rotating File Handler not created.')
     
@@ -109,7 +109,7 @@ def set_working(s):
     try:
         os.chdir(s)
         return os.getcwd()
-    except OSError, ex:
+    except OSError as ex:
         raise Exception(ex)
         sys.exit(1)
 
@@ -241,7 +241,7 @@ def check_url(url):
         logger.info('Checking URL: {}'.format(url))
         if urllib.urlopen(url).getcode() == 200:
             return True
-    except IOError, ex:
+    except IOError as ex:
         logger.warning(ex)
         logger.warning('Returning "False"')
         return False
@@ -258,7 +258,7 @@ def match_files(localfiles, url, regex, force):
         open_html = urllib.urlopen(url)
         html = open_html.read()
         open_html.close()
-    except IOError, ex:
+    except IOError as ex:
         logger.error(ex)
         logger.error('Failed to open {}'.format(url))
         logger.error('Script Exiting!')
@@ -297,7 +297,7 @@ def download(q, outdir, index):
             if fname.startswith('hrrr'):
                 logger.info(h['Content-Disposition'])
             logger.info('Thread {} - Download saved to: {}'.format(index, fn))
-        except IOError, ex:
+        except IOError as ex:
             logger.warning(ex)
         except KeyError:
             logger.warning('Forecast cycle not avaliable for {}.'.format(fname))
