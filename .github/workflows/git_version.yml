@@ -13,10 +13,15 @@ jobs:
         with:  
             fetch-depth: 0  
 
-      - name: Version  
-        id: version  
-        uses: juliansangillo/tag-version@v1  
-        with:  
-            production-branch: main  
-            test-branch: test  
-            dev-branch: develop
+      - name: Bump  
+        id: bump
+        uses: zwaldowski/match-label-action@v4
+        with:
+          allowed: major,minor,patch
+
+      - name: Version
+        uses: zwaldowski/semver-release-action@v3
+        with:
+          bump: ${{ steps.bump.outputs.match }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          
