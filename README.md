@@ -79,4 +79,3 @@ This Grib downloader, `gribdownload`, was written in Python 2.7 to allow integra
   --log-file /path/to/working/file.log \
   qpf
   ```
-  
