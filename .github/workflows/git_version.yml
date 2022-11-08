@@ -1,0 +1,27 @@
+name: Git Version
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref }}   # checkout the correct branch name
+          fetch-depth: 0                # fetch the whole repo history
+    
+      - name: Git Version
+        uses: codacy/git-version@2.4.0
+        with:
+          # The name of the release branch
+          release-branch: main
+          # The name of the dev branch
+          dev-branch: develop
+          # The prefix to use in the version
+          # prefix: # optional
+          # The paths to be used to calculate changes (comma-separated)
+          #log-paths: # optional, default is ./
